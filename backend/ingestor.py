@@ -17,7 +17,7 @@ def remove_readonly(func, path, excinfo):
 
 def ingest_repo(repo_url: str):
     temp_dir = f"./temp_{uuid.uuid4().hex}"
-    repo = None  # Initialize to avoid UnboundLocalError if clone fails
+    repo = None 
     
     try:
         repo = git.Repo.clone_from(repo_url, temp_dir)
@@ -34,10 +34,6 @@ def ingest_repo(repo_url: str):
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         lines = f.readlines()
                         
-                        # CHUNKING LOGIC: 
-                        # We use a 50-line window with a 40-line stride.
-                        # This creates a consistent 10-line overlap between chunks 
-                        # to ensure context isn't lost at the boundaries.
                         for i in range(0, len(lines), 40):
                             chunk_lines = lines[i : i + 50]
                             content = "".join(chunk_lines)
@@ -56,7 +52,6 @@ def ingest_repo(repo_url: str):
         if not documents:
             return 0
 
-        # Batch Embedding with Cohere
         texts = [doc["text"] for doc in documents]
         embeddings = co.embed(
             texts=texts,
@@ -73,21 +68,17 @@ def ingest_repo(repo_url: str):
                 "metadata": {**doc["metadata"], "text": doc["text"]}
             })
         
-        # ACTUAL BATCHED UPSERT:
-        # Pinecone handles payloads better in chunks of 100 to avoid gRPC size limits.
         for i in range(0, len(to_upsert), 100):
             batch = to_upsert[i : i + 100]
             index.upsert(vectors=batch)
 
     finally:
-        # 1. Always release the git handle first if it was successfully created
         if repo:
             try:
                 repo.close()
             except Exception as e:
                 print(f"Warning: Could not close repo handle: {e}")
                 
-        # 2. Proceed with aggressive cleanup
         if os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir, onerror=remove_readonly)
